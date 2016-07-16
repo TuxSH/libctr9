@@ -110,25 +110,24 @@ void add_ctr(void* ctr, uint32_t carry)
     }
 }
 
-void aes_decrypt(void* inbuf, void* outbuf, size_t size, uint32_t mode)
+void aes_decrypt(void* inbuf, void* outbuf, size_t blocks, uint32_t mode)
 {
     uint32_t in  = (uint32_t)inbuf;
     uint32_t out = (uint32_t)outbuf;
-    size_t block_count = size;
-    size_t blocks;
-    while (block_count != 0)
+    size_t block_nb;
+    while (blocks != 0)
     {
-        blocks = (block_count >= 0xFFFF) ? 0xFFFF : block_count;
+        block_nb = (blocks >= 0xFFFF) ? 0xFFFF : blocks;
         *REG_AESCNT = 0;
-        *REG_AESBLKCNT = blocks << 16;
+        *REG_AESBLKCNT = block_nb << 16;
         *REG_AESCNT = mode |
                       AES_CNT_START |
                       AES_CNT_FLUSH_READ |
                       AES_CNT_FLUSH_WRITE;
-        aes_fifos((void*)in, (void*)out, blocks);
-        in  += blocks * AES_BLOCK_SIZE;
-        out += blocks * AES_BLOCK_SIZE;
-        block_count -= blocks;
+        aes_fifos((void*)in, (void*)out, block_nb);
+        in  += block_nb * AES_BLOCK_SIZE;
+        out += block_nb * AES_BLOCK_SIZE;
+        blocks -= block_nb;
     }
 }
 
@@ -198,4 +197,58 @@ uint32_t aescnt_checkread()
 {
     size_t ret = aes_getreadcount();
     return (ret <= 3);
+}
+
+
+static inline void aes128_processBlock(uint8_t* dst, uint8_t* src)
+{
+    uint8_t zeroes[16] = {0};
+    set_ctr(zeroes);
+    aes_decrypt(src, dst, 1, AES_CBC_ENCRYPT_MODE);
+}
+
+static inline void shiftBlockLeftBy1(uint8_t buf[16])
+{
+    int finalXOR = (buf[0] & 0x80) != 0;
+    for(uint32_t i = 0; i < 15; i++)
+        buf[i] = (buf[i] << 1) | (buf[i + 1] >> 7);
+
+    buf[15] <<= 1;
+    if(finalXOR)
+        buf[15] ^= 0x87;
+}
+
+void cmac(void* result, void* data, size_t size)
+{
+    uint8_t* in = (uint8_t*) data;
+    uint8_t vec[16] = {0};
+
+    for(uint32_t i = 0; i < size / 16; i++)
+    {
+        for(uint32_t j = 0; j < 16; j++)
+            vec[j] ^= *in++;
+
+        aes128_processBlock(vec, vec);
+    }
+
+    // Last block
+    uint32_t remaining = size % 16;
+    uint8_t vec2[16] = {0};
+    
+    for(uint32_t i = 0; i < remaining; i++)
+        vec[i] ^= *in++;
+    
+    aes128_processBlock(vec2, vec2);
+    shiftBlockLeftBy1(vec2);
+
+    if(remaining != 0)
+    {
+        vec[remaining] ^= 0x80;
+        shiftBlockLeftBy1(vec2);
+    }
+
+    for(uint32_t i = 0; i < 16; i++)
+        vec2[i] ^= vec[i];
+
+    aes128_processBlock((void*) result, vec2);
 }

@@ -50,7 +50,7 @@ void setup_aeskey(uint8_t keyslot, void* keyy);
 void use_aeskey(uint32_t keyno);
 void set_ctr(void* iv);
 void add_ctr(void* ctr, uint32_t carry);
-void aes_decrypt(void* inbuf, void* outbuf, size_t size, uint32_t mode);
+void aes_decrypt(void* inbuf, void* outbuf, size_t blocks, uint32_t mode);
 void aes_fifos(void* inbuf, void* outbuf, size_t blocks);
 void set_aeswrfifo(uint32_t value);
 uint32_t read_aesrdfifo(void);
@@ -58,6 +58,8 @@ uint32_t aes_getwritecount(void);
 uint32_t aes_getreadcount(void);
 uint32_t aescnt_checkwrite(void);
 uint32_t aescnt_checkread(void);
+
+void cmac(void* result, void* data, size_t size);
 
 #ifdef __cplusplus
 }
